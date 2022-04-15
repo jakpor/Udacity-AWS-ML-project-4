@@ -165,7 +165,7 @@ if __name__=='__main__':
     train_loader, test_loader, validation_loader=create_data_loaders('dogImages',batch_size)
     model=net()
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=133)
     optimizer = optim.Adam(model.fc.parameters(), lr=learning_rate)
 
     logger.info("Starting Model Training")
