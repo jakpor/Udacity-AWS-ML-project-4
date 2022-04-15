@@ -1,4 +1,3 @@
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -12,7 +11,10 @@ import argparse
 import os
 import logging
 import sys
-from tqdm import tqdm
+from tqdm import tqdm # one-line progress bars
+
+# Add this line of you don't want your job to fail unexpected after multiple hours of training
+# https://stackoverflow.com/questions/12984426/pil-ioerror-image-file-truncated-with-big-images
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -21,6 +23,7 @@ logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.StreamHandler(sys.stdout))
 
 def test(model, test_loader, criterion):
+    logger.debug(f"Testing Model on Whole Testing Dataset")
     model.eval()
     running_loss=0
     running_corrects=0
@@ -32,14 +35,17 @@ def test(model, test_loader, criterion):
         running_loss += loss.item() * inputs.size(0)
         running_corrects += torch.sum(preds == labels.data)
 
-    total_loss = running_loss // len(test_loader)
-    total_acc = running_corrects.double() // len(test_loader)
+    # Originally this loss was computed using floor division '//', while the algorithm works on the classic division. 
+    # I want to get actual float values of accuracy and precision, especially when they are close to each other.
+    # Also we want to divide the output by the number of trained objects, not by the numebr of groups of trained objects...
+    total_loss = running_loss / len(test_loader.dataset)
+    total_acc = running_corrects.double() / len(test_loader.dataset)
     
     logger.info(f"Testing Loss: {total_loss}")
     logger.info(f"Testing Accuracy: {total_acc}")
 
 def train(model, train_loader, validation_loader, criterion, optimizer):
-    epochs=50
+    epochs=50 # this is a trick - this script will actually break after first epoch :)
     best_loss=1e6
     image_dataset={'train':train_loader, 'valid':validation_loader}
     loss_counter=0
@@ -52,7 +58,10 @@ def train(model, train_loader, validation_loader, criterion, optimizer):
             else:
                 model.eval()
             running_loss = 0.0
-            running_corrects = 0
+            running_corrects = 0.0
+            running_samples=0
+            
+            total_samples_in_phase = len(image_dataset[phase].dataset)
 
             for inputs, labels in image_dataset[phase]:
                 outputs = model(inputs)
@@ -66,9 +75,27 @@ def train(model, train_loader, validation_loader, criterion, optimizer):
                 _, preds = torch.max(outputs, 1)
                 running_loss += loss.item() * inputs.size(0)
                 running_corrects += torch.sum(preds == labels.data)
+                running_samples+=len(inputs)
+                
+                accuracy = running_corrects/running_samples
+                logger.debug("Epoch {}, Phase {}, Images [{}/{} ({:.0f}%)] Loss: {:.2f} Accuracy: {}/{} ({:.2f}%)".format(
+                        epoch,
+                        phase,
+                        running_samples,
+                        total_samples_in_phase,
+                        100.0 * (float(running_samples) / float(total_samples_in_phase)),
+                        loss.item(),
+                        running_corrects,
+                        running_samples,
+                        100.0*accuracy,
+                    ))
+                
+                #NOTE: Comment lines below to train and test on whole dataset
+                if (running_samples>(0.1*total_samples_in_phase)):
+                    break                  
 
-            epoch_loss = running_loss // len(image_dataset[phase])
-            epoch_acc = running_corrects // len(image_dataset[phase])
+            epoch_loss = running_loss / running_samples
+            epoch_acc = running_corrects / running_samples
             
             if phase=='valid':
                 if epoch_loss<best_loss:
@@ -80,10 +107,13 @@ def train(model, train_loader, validation_loader, criterion, optimizer):
             logger.info('{} loss: {:.4f}, acc: {:.4f}, best loss: {:.4f}'.format(phase,
                                                                                  epoch_loss,
                                                                                  epoch_acc,
-                                                                                 best_loss))
+                                                                                 best_loss))          
+            
         if loss_counter==1:
+            logger.info(f"Break due to increasing loss at epoch: {epoch}")
             break
         if epoch==0:
+            logger.info(f"Break due to epoch limit at epoch: {epoch}")
             break
     return model
     
