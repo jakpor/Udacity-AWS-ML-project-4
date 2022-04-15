@@ -1,0 +1,12 @@
+Commands to run on a new machine
+
+source activate pytorch_p38
+wget https://s3-us-west-1.amazonaws.com/udacity-aind/dog-project/dogImages.zip
+unzip dogImages.zip
+mkdir TrainedModels
+
+cat > solution.py
+// paste file content
+Ctrl+D to exit
+
+python solution.py
