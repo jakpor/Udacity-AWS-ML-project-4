@@ -22,7 +22,6 @@ logger=logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.StreamHandler(sys.stdout))
 
-
 def test(model, test_loader, criterion):
     model.eval()
     running_loss=0
@@ -37,8 +36,6 @@ def test(model, test_loader, criterion):
 
     total_loss = running_loss / len(test_loader)
     total_acc = running_corrects.double() / len(test_loader)
-    
-
 
 def train(model, train_loader, validation_loader, criterion, optimizer):
     epochs=5
@@ -49,12 +46,16 @@ def train(model, train_loader, validation_loader, criterion, optimizer):
 
     for epoch in range(epochs):
         for phase in ['train', 'valid']:
+            logger.info(f"Epoch: {epoch}, phase {phase}")
             if phase=='train':
                 model.train()
             else:
                 model.eval()
             running_loss = 0.0
-            running_corrects = 0
+            running_corrects = 0            
+            running_samples=0
+            
+            total_samples_in_phase = len(image_dataset[phase].dataset)
 
             for pos,(inputs, labels) in enumerate(image_dataset[phase]):
                 tot=len(image_dataset[phase])
@@ -70,9 +71,27 @@ def train(model, train_loader, validation_loader, criterion, optimizer):
                 _, preds = torch.max(outputs, 1)
                 running_loss += loss.item() * inputs.size(0)
                 running_corrects += torch.sum(preds == labels.data)
+                running_samples += len(inputs)
+                
+                accuracy = running_corrects / running_samples
+                logger.debug("Epoch {}, Phase {}, Images [{}/{} ({:.0f}%)] Loss: {:.2f} Accuracy: {}/{} ({:.2f}%)".format(
+                        epoch,
+                        phase,
+                        running_samples,
+                        total_samples_in_phase,
+                        100.0 * (float(running_samples) / float(total_samples_in_phase)),
+                        loss.item(),
+                        running_corrects,
+                        running_samples,
+                        100.0*accuracy,
+                    ))
+                
+                #NOTE: Comment lines below to train and test on whole dataset
+                if (running_samples>(0.1*total_samples_in_phase)):
+                    break                  
 
-            epoch_loss = running_loss / len(image_dataset[phase])
-            epoch_acc = running_corrects / len(image_dataset[phase])
+            epoch_loss = running_loss / running_samples
+            epoch_acc = running_corrects / running_samples
             
             if phase=='valid':
                 if epoch_loss<best_loss:
@@ -85,10 +104,17 @@ def train(model, train_loader, validation_loader, criterion, optimizer):
                         outputs = model(inputs)
                         valid_loss = criterion(outputs, labels)
                         #log.record(pos=(pos+1)/tot, valid_loss=valid_loss, end='\r') # impersistent data
+                        
+            logger.info('{} loss: {:.4f}, acc: {:.4f}, best loss: {:.4f}'.format(phase,
+                                                                                 epoch_loss,
+                                                                                 epoch_acc,
+                                                                                 best_loss))   
 
         if loss_counter==1:
+            logger.info(f"Break due to increasing loss at epoch: {epoch}")
             break
         if epoch==0:
+            logger.info(f"Break due to epoch limit at epoch: {epoch}")
             break
     return model
     
@@ -120,27 +146,32 @@ def create_data_loaders(data, batch_size):
         transforms.ToTensor(),
         ])
 
-    train_data = torchvision.datasets.ImageFolder(root=test_data_path, transform=train_transform)
+    train_data = torchvision.datasets.ImageFolder(root=train_data_path, transform=train_transform)
     train_data_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
     test_data = torchvision.datasets.ImageFolder(root=test_data_path, transform=test_transform)
-    test_data_loader  = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=True)
+    test_data_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=True)
 
     validation_data = torchvision.datasets.ImageFolder(root=validation_data_path, transform=test_transform)
-    validation_data_loader  = torch.utils.data.DataLoader(validation_data, batch_size=batch_size, shuffle=True) 
+    validation_data_loader = torch.utils.data.DataLoader(validation_data, batch_size=batch_size, shuffle=True) 
     
     return train_data_loader, test_data_loader, validation_data_loader
 
-batch_size=2
-learning_rate=1e-4
-train_loader, test_loader, validation_loader=create_data_loaders('dogImages',batch_size)
-model=net()
+if __name__=='__main__':
+    logger.info("Starting program")
+    logger.debug("Creatinng data loaders")
+    batch_size=32
+    learning_rate=1e-4
+    train_loader, test_loader, validation_loader=create_data_loaders('dogImages',batch_size)
+    model=net()
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.fc.parameters(), lr=learning_rate)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.fc.parameters(), lr=learning_rate)
 
-logger.info("Starting Model Training")
-model=train(model, train_loader, validation_loader, criterion, optimizer)
-torch.save(model.state_dict(), 'TrainedModels/model.pth')
-print('saved')
+    logger.info("Starting Model Training")
+    model=train(model, train_loader, validation_loader, criterion, optimizer)
+    torch.save(model.state_dict(), 'TrainedModels/model.pth')
+    logger.info('Model saved.')
+
+
 

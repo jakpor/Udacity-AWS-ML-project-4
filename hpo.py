@@ -184,6 +184,6 @@ if __name__=='__main__':
     parser.add_argument('--output_dir', type=str, default=os.environ['SM_OUTPUT_DATA_DIR'])
     
     args=parser.parse_args()
-    print(args)
+    logger.debug(args)
     
     main(args)
